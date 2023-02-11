@@ -1,7 +1,8 @@
 import discord
 import requests
-import time
+from datetime import datetime
 import configparser
+from discord.ext import tasks
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -9,7 +10,6 @@ config.read('config.ini')
 ipUrlApi = 'https://api.ipify.org'
 discordIpChannelId = int(config['DEFAULT']['ChannelId'])
 secret = config['DEFAULT']['ClientSecret']
-lastIp = ""
 
 intents = discord.Intents.all()
 intents.message_content = True
@@ -21,24 +21,28 @@ ipMinecraftPort = ":25565"
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
-    lastIp = get_new_ip()
-    channel = client.get_channel(discordIpChannelId)
-    print(f"Posting on channel: {discordIpChannelId}")
-    await channel.send(ipAnnouncementText + lastIp + ipMinecraftPort)
-    print("Starting endless loop")
-    while(True):
-        newIp = get_new_ip()
-        if(lastIp != newIp):
-            print(ipAnnouncementText + lastIp + ipMinecraftPort)
-            await channel.send(ipAnnouncementText + lastIp + ipMinecraftPort)
-            lastIp = newIp
-        else:
-            print("No update")
-        time.sleep(120)
+    print("Starting scheduled task")        
+    on_schedule_ip.start()
      
 def get_new_ip():
         currentIp = requests.get(ipUrlApi).text
-        print(f"Got IP: {currentIp}")
         return currentIp
-
+    
+@tasks.loop(minutes=5)
+async def on_schedule_ip():
+    channel = client.get_channel(discordIpChannelId)
+    newIp = ipAnnouncementText + get_new_ip() + ipMinecraftPort
+    lastIp = newIp
+    async for message in channel.history(limit=1):
+        print("Reading last message of channel")
+        lastIp = message.content
+    
+    print(lastIp)
+    if(newIp != lastIp):
+        print("Updating IP")
+        print(newIp)
+        await channel.send(newIp)
+    else:
+        print("No update")
+    
 client.run(secret)
